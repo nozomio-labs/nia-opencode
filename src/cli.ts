@@ -272,13 +272,14 @@ async function install(options: InstallOptions): Promise<number> {
   let apiKey = options.apiKey || process.env.NIA_API_KEY || "";
 
   if (!apiKey && options.tui && rl) {
-    console.log("Get your API key from: https://app.trynia.ai\n");
+    console.log("Get your API key from: https://app.trynia.ai");
+    console.log("New user? Run: curl -fsSL https://app.trynia.ai/cli | sh\n");
     apiKey = await prompt(rl, "Enter your Nia API key (nk_...): ");
   }
 
   if (!apiKey) {
     console.log("  No API key provided. You can set NIA_API_KEY environment variable later.");
-    console.log("  Get your API key at: https://trynia.ai/api-keys\n");
+    console.log("  Get your API key at: https://app.trynia.ai\n");
   } else if (!apiKey.startsWith("nk_")) {
     console.log("  Warning: API key should start with 'nk_'");
   } else {

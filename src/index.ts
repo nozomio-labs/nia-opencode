@@ -2,7 +2,7 @@ import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { Part } from "@opencode-ai/sdk";
 
 import { isConfigured } from "./config.js";
-import { detectResearchKeyword, NIA_NUDGE_MESSAGE } from "./keywords.js";
+import { detectKeyword, NIA_NUDGE_MESSAGE, NIA_SAVE_NUDGE_MESSAGE } from "./keywords.js";
 import { log } from "./services/logger.js";
 
 export const NiaPlugin: Plugin = async (ctx: PluginInput) => {
@@ -43,24 +43,25 @@ export const NiaPlugin: Plugin = async (ctx: PluginInput) => {
           partsCount: output.parts.length,
         });
 
-        const { detected, match } = detectResearchKeyword(userMessage);
+        const { type, match } = detectKeyword(userMessage);
 
-        if (detected) {
-          log("chat.message: research keyword detected", { match });
+        if (type) {
+          const nudgeText = type === "save" ? NIA_SAVE_NUDGE_MESSAGE : NIA_NUDGE_MESSAGE;
+          log(`chat.message: ${type} keyword detected`, { match });
 
           const nudgePart: Part = {
-            id: `nia-nudge-${Date.now()}`,
+            id: `nia-${type}-nudge-${Date.now()}`,
             sessionID: input.sessionID,
             messageID: output.message.id,
             type: "text",
-            text: NIA_NUDGE_MESSAGE,
+            text: nudgeText,
             synthetic: true,
           };
 
           output.parts.push(nudgePart);
 
           const duration = Date.now() - start;
-          log("chat.message: nudge injected", { duration, match });
+          log(`chat.message: ${type} nudge injected`, { duration, match });
         }
       } catch (error) {
         log("chat.message: ERROR", { error: String(error) });

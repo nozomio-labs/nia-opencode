@@ -1,0 +1,315 @@
+#!/usr/bin/env node
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import * as readline from "node:readline";
+
+const OPENCODE_CONFIG_DIR = join(homedir(), ".config", "opencode");
+const NIA_CONFIG_PATH = join(OPENCODE_CONFIG_DIR, "nia.json");
+const PLUGIN_NAME = "nia-opencode@latest";
+
+function stripJsoncComments(content: string): string {
+  return content
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+}
+
+function createReadline(): readline.Interface {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+}
+
+async function confirm(rl: readline.Interface, question: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    rl.question(`${question} (y/n) `, (answer) => {
+      resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+    });
+  });
+}
+
+async function prompt(rl: readline.Interface, question: string): Promise<string> {
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      resolve(answer.trim());
+    });
+  });
+}
+
+function findOpencodeConfig(): string | null {
+  const candidates = [
+    join(OPENCODE_CONFIG_DIR, "opencode.jsonc"),
+    join(OPENCODE_CONFIG_DIR, "opencode.json"),
+  ];
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      return path;
+    }
+  }
+
+  return null;
+}
+
+function addPluginToConfig(configPath: string): boolean {
+  try {
+    const content = readFileSync(configPath, "utf-8");
+
+    if (content.includes("nia-opencode")) {
+      console.log("  Plugin already registered in config");
+      return true;
+    }
+
+    const jsonContent = stripJsoncComments(content);
+    let config: Record<string, unknown>;
+
+    try {
+      config = JSON.parse(jsonContent);
+    } catch {
+      console.error("  Failed to parse config file");
+      return false;
+    }
+
+    const plugins = (config.plugin as string[]) || [];
+    plugins.push(PLUGIN_NAME);
+    config.plugin = plugins;
+
+    if (configPath.endsWith(".jsonc")) {
+      if (content.includes('"plugin"')) {
+        const newContent = content.replace(
+          /("plugin"\s*:\s*\[)([^\]]*?)(\])/,
+          (_match, start, middle, end) => {
+            const trimmed = middle.trim();
+            if (trimmed === "") {
+              return `${start}\n    "${PLUGIN_NAME}"\n  ${end}`;
+            }
+            return `${start}${middle.trimEnd()},\n    "${PLUGIN_NAME}"\n  ${end}`;
+          }
+        );
+        writeFileSync(configPath, newContent);
+      } else {
+        const newContent = content.replace(
+          /^(\s*\{)/,
+          `$1\n  "plugin": ["${PLUGIN_NAME}"],`
+        );
+        writeFileSync(configPath, newContent);
+      }
+    } else {
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+    }
+
+    console.log(`  Added plugin to ${configPath}`);
+    return true;
+  } catch (err) {
+    console.error("  Failed to update config:", err);
+    return false;
+  }
+}
+
+function addMcpServerToConfig(configPath: string, apiKey: string): boolean {
+  try {
+    const content = readFileSync(configPath, "utf-8");
+    const jsonContent = stripJsoncComments(content);
+    let config: Record<string, unknown>;
+
+    try {
+      config = JSON.parse(jsonContent);
+    } catch {
+      console.error("  Failed to parse config file");
+      return false;
+    }
+
+    const mcp = (config.mcp as Record<string, unknown>) || {};
+
+    if (mcp.nia) {
+      console.log("  MCP server 'nia' already configured");
+      return true;
+    }
+
+    mcp.nia = {
+      type: "remote",
+      url: "https://apigcp.trynia.ai/mcp",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      oauth: false,
+    };
+
+    config.mcp = mcp;
+
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    console.log("  Added MCP server 'nia' to config");
+    return true;
+  } catch (err) {
+    console.error("  Failed to add MCP server:", err);
+    return false;
+  }
+}
+
+function createNewConfig(apiKey: string): boolean {
+  mkdirSync(OPENCODE_CONFIG_DIR, { recursive: true });
+
+  const configPath = join(OPENCODE_CONFIG_DIR, "opencode.json");
+  const config = {
+    plugin: [PLUGIN_NAME],
+    mcp: {
+      nia: {
+        type: "remote",
+        url: "https://apigcp.trynia.ai/mcp",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        oauth: false,
+      },
+    },
+  };
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
+  console.log(`  Created ${configPath}`);
+  return true;
+}
+
+function createNiaConfig(apiKey: string): boolean {
+  mkdirSync(OPENCODE_CONFIG_DIR, { recursive: true });
+
+  const config = {
+    apiKey,
+    keywords: {
+      enabled: true,
+    },
+  };
+
+  writeFileSync(NIA_CONFIG_PATH, JSON.stringify(config, null, 2));
+  console.log(`  Created ${NIA_CONFIG_PATH}`);
+  return true;
+}
+
+interface InstallOptions {
+  tui: boolean;
+  apiKey?: string;
+}
+
+async function install(options: InstallOptions): Promise<number> {
+  console.log("\n Nia OpenCode Plugin Installer\n");
+
+  const rl = options.tui ? createReadline() : null;
+
+  // Step 1: Get API key
+  console.log("Step 1: Configure API Key");
+  let apiKey = options.apiKey || process.env.NIA_API_KEY || "";
+
+  if (!apiKey && options.tui && rl) {
+    console.log("Get your API key from: https://trynia.ai/api-keys\n");
+    apiKey = await prompt(rl, "Enter your Nia API key (nk_...): ");
+  }
+
+  if (!apiKey) {
+    console.log("  No API key provided. You can set NIA_API_KEY environment variable later.");
+    console.log("  Get your API key at: https://trynia.ai/api-keys\n");
+  } else if (!apiKey.startsWith("nk_")) {
+    console.log("  Warning: API key should start with 'nk_'");
+  } else {
+    console.log("  API key configured");
+  }
+
+  // Step 2: Create Nia config file
+  console.log("\nStep 2: Create Nia Config");
+  if (apiKey) {
+    createNiaConfig(apiKey);
+  } else {
+    console.log("  Skipped (no API key)");
+  }
+
+  // Step 3: Register plugin and MCP server in OpenCode config
+  console.log("\nStep 3: Configure OpenCode");
+  const configPath = findOpencodeConfig();
+
+  if (configPath) {
+    if (options.tui && rl) {
+      const shouldModify = await confirm(rl, `Modify ${configPath}?`);
+      if (shouldModify) {
+        addPluginToConfig(configPath);
+        if (apiKey) {
+          addMcpServerToConfig(configPath, apiKey);
+        }
+      } else {
+        console.log("  Skipped.");
+      }
+    } else {
+      addPluginToConfig(configPath);
+      if (apiKey) {
+        addMcpServerToConfig(configPath, apiKey);
+      }
+    }
+  } else {
+    if (options.tui && rl) {
+      const shouldCreate = await confirm(rl, "No OpenCode config found. Create one?");
+      if (shouldCreate && apiKey) {
+        createNewConfig(apiKey);
+      } else {
+        console.log("  Skipped.");
+      }
+    } else if (apiKey) {
+      createNewConfig(apiKey);
+    }
+  }
+
+  // Summary
+  console.log("\n" + "-".repeat(50));
+  console.log("\n Setup Complete!\n");
+
+  if (!apiKey) {
+    console.log("Next steps:");
+    console.log("1. Get your API key from: https://trynia.ai/api-keys");
+    console.log("2. Set the environment variable:");
+    console.log('   export NIA_API_KEY="nk_..."');
+    console.log("   Or edit ~/.config/opencode/nia.json");
+  } else {
+    console.log("Nia is configured and ready to use!");
+  }
+
+  console.log("\nKeyword triggers enabled:");
+  console.log('  - "research...", "look up...", "find docs..."');
+  console.log('  - "search codebase...", "grep for..."');
+  console.log('  - "index this repo", "add to nia"');
+
+  console.log("\nRestart OpenCode to activate the plugin.\n");
+
+  if (rl) rl.close();
+  return 0;
+}
+
+function printHelp(): void {
+  console.log(`
+nia-opencode - Nia Knowledge Agent plugin for OpenCode
+
+Commands:
+  install                Install and configure the plugin
+    --no-tui             Non-interactive mode
+    --api-key <key>      Provide API key directly
+
+Examples:
+  bunx nia-opencode@latest install
+  bunx nia-opencode@latest install --no-tui --api-key nk_xxx
+`);
+}
+
+const args = process.argv.slice(2);
+
+if (args.length === 0 || args[0] === "help" || args[0] === "--help" || args[0] === "-h") {
+  printHelp();
+  process.exit(0);
+}
+
+if (args[0] === "install") {
+  const noTui = args.includes("--no-tui");
+  const apiKeyIndex = args.indexOf("--api-key");
+  const apiKey = apiKeyIndex !== -1 ? args[apiKeyIndex + 1] : undefined;
+
+  install({ tui: !noTui, apiKey }).then((code) => process.exit(code));
+} else {
+  console.error(`Unknown command: ${args[0]}`);
+  printHelp();
+  process.exit(1);
+}

@@ -248,7 +248,7 @@ async function install(options: InstallOptions): Promise<number> {
   let apiKey = options.apiKey || process.env.NIA_API_KEY || "";
 
   if (!apiKey && options.tui && rl) {
-    console.log("Get your API key from: https://trynia.ai/api-keys\n");
+    console.log("Get your API key from: https://app.trynia.ai\n");
     apiKey = await prompt(rl, "Enter your Nia API key (nk_...): ");
   }
 
@@ -322,7 +322,7 @@ async function install(options: InstallOptions): Promise<number> {
 
   if (!apiKey) {
     console.log("Next steps:");
-    console.log("1. Get your API key from: https://trynia.ai/api-keys");
+    console.log("1. Get your API key from: https://app.trynia.ai");
     console.log("2. Set the environment variable:");
     console.log('   export NIA_API_KEY="nk_..."');
     console.log("   Or edit ~/.config/opencode/nia.json");

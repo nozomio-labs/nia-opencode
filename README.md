@@ -123,7 +123,7 @@ NIA_DEBUG=true opencode
 
 ## Get Your API Key
 
-Get your Nia API key at [trynia.ai/api-keys](https://trynia.ai/api-keys)
+Get your Nia API key at [app.trynia.ai](https://app.trynia.ai)
 
 ## License
 
